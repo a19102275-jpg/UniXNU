@@ -1,0 +1,15 @@
+
+name: Runner availability test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check runner
+        run: |
+          uname -a
+          echo "GitHub runner is working"
