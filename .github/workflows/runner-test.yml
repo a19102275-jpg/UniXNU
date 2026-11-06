@@ -1,0 +1,17 @@
+
+name: macOS runner test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Check runner
+        run: |
+          uname -m
+          sw_vers
+          ls -d /Applications/Xcode*.app || true
+          xcodebuild -version
