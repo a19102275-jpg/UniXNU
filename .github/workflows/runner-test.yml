@@ -1,17 +1,15 @@
 
-name: macOS runner test
+name: Runner availability test
 
 on:
   workflow_dispatch:
 
 jobs:
   test:
-    runs-on: macos-15
-    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check runner
         run: |
-          uname -m
-          sw_vers
-          ls -d /Applications/Xcode*.app || true
-          xcodebuild -version
+          uname -a
+          echo "GitHub runner is working"
