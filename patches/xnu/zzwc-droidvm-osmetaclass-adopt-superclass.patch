@@ -1,0 +1,70 @@
+diff --git a/libkern/c++/OSMetaClass.cpp b/libkern/c++/OSMetaClass.cpp
+index 4ad2fc7..6d1385a 100644
+--- a/libkern/c++/OSMetaClass.cpp
++++ b/libkern/c++/OSMetaClass.cpp
+@@ -1247,6 +1247,45 @@ OSMetaClass::getMetaClassWithName(const OSSymbol * name)
+         return retMeta;
+ }
+ 
++/*********************************************************************
++* DroidVM (droidvm-osmetaclass-adopt-superclass.patch): make the class
++* className, of no instance yet, a subclass of superName, where superName
++* itself descends from its present superclass: a class this kernel defines
++* then stands in the class chain where an original family's subclass stands.
++* The sandbox matches a user client by its class chain (the profiles'
++* iokit-user-client-class), and the original profiles name the GPU family's
++* base user client (IOGPUDeviceUserClient), which Apple's AGXDeviceUserClient
++* derives from; the native GPU driver's user client is an IOUserClient as C++
++* sees it, and stays one: its new superclass descends from IOUserClient. Only
++* with no instance, as an instance counts itself up its chain.
++*********************************************************************/
++bool
++OSMetaClassAdoptSuperclass(const char * className, const char * superName)
++{
++	const OSSymbol * name = OSSymbol::withCString(className);
++	const OSSymbol * adoptedName = OSSymbol::withCString(superName);
++	bool adopted = false;
++
++	IOLockLock(sAllClassesLock);
++	OSMetaClass * meta = (sAllClassesDict && name) ? (OSMetaClass *) sAllClassesDict->getObject(name) : NULL;
++	const OSMetaClass * parent = (sAllClassesDict && adoptedName) ? (const OSMetaClass *) sAllClassesDict->getObject(adoptedName) : NULL;
++	if (meta && parent && parent != meta && meta->instanceCount == 0) {
++		const OSMetaClass * walk = parent;
++		while (walk && walk != meta && walk != meta->superClassLink) {
++			walk = walk->superClassLink;
++		}
++		if (walk && walk == meta->superClassLink) {
++			meta->superClassLink = parent;
++			adopted = true;
++		}
++	}
++	IOLockUnlock(sAllClassesLock);
++
++	OSSafeReleaseNULL(name);
++	OSSafeReleaseNULL(adoptedName);
++	return adopted;
++}
++
+ /*********************************************************************
+ *********************************************************************/
+ const OSMetaClass *
+diff --git a/libkern/libkern/c++/OSMetaClass.h b/libkern/libkern/c++/OSMetaClass.h
+index 78315a2..7e33203 100644
+--- a/libkern/libkern/c++/OSMetaClass.h
++++ b/libkern/libkern/c++/OSMetaClass.h
+@@ -1034,9 +1034,15 @@ typedef bool (*OSMetaClassInstanceApplierFunction)(const OSObject * instance,
+  * by the run-time type information system,
+  * which handles concurrency and locking internally.
+  */
++#if XNU_KERNEL_PRIVATE
++extern "C" bool OSMetaClassAdoptSuperclass(const char * className, const char * superName);
++#endif
+ class OSMetaClass : public OSMetaClassBase
+ {
+ 	friend class OSKext;
++#if XNU_KERNEL_PRIVATE
++	friend bool ::OSMetaClassAdoptSuperclass(const char * className, const char * superName);
++#endif
+ #if IOKITSTATS
+ 	friend class IOStatistics;
+ #endif
