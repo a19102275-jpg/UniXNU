@@ -218,7 +218,7 @@ jobs:
           if [ "$DEFCONFIG" = "droidvm_defconfig" ]; then
             python3 device/scripts/build-droidvm-all.py \
               --unixnu "$GITHUB_WORKSPACE" \
-              --only setup,reference
+              --only setup,volumes,policies,reference
           fi
 
           ./unixnu build kernel
