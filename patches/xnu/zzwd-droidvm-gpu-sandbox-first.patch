@@ -32,13 +32,12 @@ index 57ec92f..f4b1925 100644
  		return kIOReturnNotPermitted;
  	}
  #endif
-@@ -4562,7 +4573,8 @@ is_io_service_open_extended(
+@@ -4562,6 +4573,7 @@ is_io_service_open_extended(
  			}
  #if CONFIG_MACF
  			/* The service's grant (native_sandbox_grant) stands in for the sandbox's verdict on the render server's open. */
 -			else if (!native_sandbox_grant(service)
 +			else if (!(native_sandbox_grant(service) && !droidvm_gpu_sandbox_decides)
 +			&& 0 != mac_iokit_check_open(kauth_cred_get(), client, connect_type)) {
- 			    && 0 != mac_iokit_check_open(kauth_cred_get(), client, connect_type)) {
  				IOLog("IOUC %s failed MACF in process %s\n",
  				    client->getMetaClass()->getClassName(), creatorNameCStr);
