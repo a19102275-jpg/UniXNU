@@ -37,7 +37,7 @@ fi
 # Format 2 prepares its ordered patch series through the shared resolver.
 if [ -z "${UNIXNU_PATCH_LIST:-}" ]; then
   # Identify the XNU revision and the complete ordered patch series.
-  PATCH_STAMP=$(git -C .cache/xnu-work rev-parse --git-path unixnu-patch-series.sha256)
+  PATCH_STAMP=$(git -C .cache/xnu-work rev-parse --absolute-git-dir)/unixnu-patch-series.sha256
 
   PATCH_HASH=$(
     python3 - "$ROOT" <<'PY'
