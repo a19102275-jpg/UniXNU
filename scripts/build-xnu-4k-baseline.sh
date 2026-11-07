@@ -36,28 +36,85 @@ if [ ! -x .cache/fakeroot/usr/local/libexec/availability.pl ]; then
 fi
 # Format 2 prepares its ordered patch series through the shared resolver.
 if [ -z "${UNIXNU_PATCH_LIST:-}" ]; then
-# The optional observation hooks overlap existing root/exec patch context.
-# Remove them first so earlier independent patches retain their idempotent checks.
-# The same holds for the boot-time GPU addon mount and the staged system apps copy (zzy), which edit the owner Data mount function
-# inside the systemos patch, and the staged system apps view (zzy-union), which edits that function after them; the bindfs
-# file-ID lookup (zzy-zbindfs) edits bind_vfsops.c next to the GPU addon mount's root-owner change; the pmap page-attribute
-# flush (zzx-pmap-sync-flush) edits what zzx-pmap-sync-64bit-pa does. Reverse newest first; the loop below re-applies them in
-# name order.
-for LATE_PATCH in "$ROOT/patches/xnu/zzz-boot-progress.patch" "$ROOT/patches/xnu/zzyc-owner-skip-launch-constraints.patch" \
-    "$ROOT/patches/xnu/zzyb-native-cryptex-os-view.patch" "$ROOT/patches/xnu/zzy-zbindfs-vget.patch" \
-    "$ROOT/patches/xnu/zzy-union-staged-apps.patch" "$ROOT/patches/xnu/zzy-staged-system-apps.patch" \
-    "$ROOT/patches/xnu/zzy-owner-staged-apps-mount.patch" "$ROOT/patches/xnu/zzy-native-gpu-addon-mount.patch" \
-    "$ROOT/patches/xnu/zzx-pmap-sync-flush.patch"; do
-  if git -C .cache/xnu-work apply --reverse --check "$LATE_PATCH" >/dev/null 2>&1; then
-    git -C .cache/xnu-work apply --reverse "$LATE_PATCH"
+  # Identify the XNU revision and the complete ordered patch series.
+  PATCH_STAMP=$(git -C .cache/xnu-work rev-parse --git-path unixnu-patch-series.sha256)
+
+  PATCH_HASH=$(
+    python3 - "$ROOT" <<'PY'
+import hashlib
+import subprocess
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+work = root / ".cache/xnu-work"
+digest = hashlib.sha256()
+
+head = subprocess.check_output(
+    ["git", "-C", str(work), "rev-parse", "HEAD"]
+).strip()
+digest.update(head + b"\0")
+
+patches = sorted((root / "patches/xnu").glob("*.patch"))
+patches += sorted((root / "kits/XnuPrelink/patches").glob("*.patch"))
+
+for patch in patches:
+    digest.update(str(patch.relative_to(root)).encode() + b"\0")
+    digest.update(patch.read_bytes())
+    digest.update(b"\0")
+
+print(digest.hexdigest())
+PY
+  )
+
+  if [ -f "$PATCH_STAMP" ]; then
+    STORED_PATCH_HASH=$(cat "$PATCH_STAMP")
+
+    if [ "$STORED_PATCH_HASH" != "$PATCH_HASH" ]; then
+      echo "error: XNU patch series changed since its last successful application" >&2
+      echo "error: rebuild with a fresh XNU worktree" >&2
+      exit 1
+    fi
+
+    if ! grep -q 'native_sandbox_grant(IOService' \
+         .cache/xnu-work/iokit/Kernel/IOUserClient.cpp ||
+       ! grep -q 'droidvm_gpu_sandbox_decides' \
+         .cache/xnu-work/iokit/Kernel/IOUserClient.cpp; then
+      echo "error: XNU patch stamp exists but expected GPU code is missing" >&2
+      exit 1
+    fi
+
+    echo "XNU patch series unchanged; skipping reapplication"
+  else
+    # Reverse late patches that overlap earlier patch contexts.
+    for LATE_PATCH in \
+        "$ROOT/patches/xnu/zzz-boot-progress.patch" \
+        "$ROOT/patches/xnu/zzyc-owner-skip-launch-constraints.patch" \
+        "$ROOT/patches/xnu/zzyb-native-cryptex-os-view.patch" \
+        "$ROOT/patches/xnu/zzy-zbindfs-vget.patch" \
+        "$ROOT/patches/xnu/zzy-union-staged-apps.patch" \
+        "$ROOT/patches/xnu/zzy-staged-system-apps.patch" \
+        "$ROOT/patches/xnu/zzy-owner-staged-apps-mount.patch" \
+        "$ROOT/patches/xnu/zzy-native-gpu-addon-mount.patch" \
+        "$ROOT/patches/xnu/zzx-pmap-sync-flush.patch"; do
+      if git -C .cache/xnu-work apply --reverse --check "$LATE_PATCH" >/dev/null 2>&1; then
+        git -C .cache/xnu-work apply --reverse "$LATE_PATCH"
+      fi
+    done
+
+    # Apply each patch in the original order.
+    for PATCH in "$ROOT"/patches/xnu/*.patch "$ROOT"/kits/XnuPrelink/patches/*.patch; do
+      if ! git -C .cache/xnu-work apply --reverse --check "$PATCH" >/dev/null 2>&1; then
+        echo "Applying XNU patch: $(basename "$PATCH")"
+        git -C .cache/xnu-work apply --check "$PATCH"
+        git -C .cache/xnu-work apply "$PATCH"
+      fi
+    done
+
+    # Record success only after the entire series is applied.
+    printf '%s\n' "$PATCH_HASH" > "$PATCH_STAMP"
+    echo "XNU patch series successfully recorded"
   fi
-done
-for PATCH in "$ROOT"/patches/xnu/*.patch "$ROOT"/kits/XnuPrelink/patches/*.patch; do
-  if ! git -C .cache/xnu-work apply --reverse --check "$PATCH" >/dev/null 2>&1; then
-    git -C .cache/xnu-work apply --check "$PATCH"
-    git -C .cache/xnu-work apply "$PATCH"
-  fi
-done
 fi
 export XNU_AVAILABILITY_PL=$ROOT/.cache/fakeroot/usr/local/libexec/availability.pl
 python3 scripts/prepare-xnu-source.py
